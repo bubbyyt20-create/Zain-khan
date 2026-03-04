@@ -79,7 +79,7 @@ export const InputSection: React.FC<InputSectionProps> = ({ onStart, disabled })
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept="image/*"
+            accept="image/jpeg, image/png, image/webp"
             onChange={handleChange}
           />
           <div className="bg-indigo-100 p-4 rounded-full mb-4 text-indigo-600">

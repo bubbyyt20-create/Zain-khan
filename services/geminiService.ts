@@ -5,7 +5,11 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Helper to clean base64 string
 const cleanBase64 = (data: string) => {
-  return data.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, "");
+  if (!data) return '';
+  // Split on comma if present (data:image/xyz;base64,...)
+  const base64Content = data.includes(',') ? data.split(',')[1] : data;
+  // Remove any whitespace (newlines, spaces) which can cause INVALID_ARGUMENT
+  return base64Content.replace(/\s/g, '');
 };
 
 /**
@@ -17,55 +21,52 @@ export const analyzeProduct = async (
   value: string,
   mimeType: string = 'image/jpeg'
 ): Promise<string> => {
-  try {
-    const model = 'gemini-2.5-flash';
-    let prompt = "";
-    let contents: any = {};
-
-    if (mode === 'upload') {
-      prompt = `Analyze this image for a dropshipping product listing. 
-      Identify exactly what the product is, its likely category, key features, materials, and human usage. 
-      Be specific. Return a detailed paragraph description suitable for generating marketing assets.`;
-      
-      contents = {
-        parts: [
-          { inlineData: { mimeType, data: cleanBase64(value) } },
-          { text: prompt }
-        ]
-      };
-    } else {
-      prompt = `Analyze this product input: "${value}". 
-      If it is a URL, infer the product details from the string.
-      Identify exactly what the product is, its likely category, key features, and human usage.
-      Return a detailed paragraph description suitable for generating marketing assets.`;
-      
-      // Use Search tool if it looks like a URL or complex query to get better context
-      const useSearch = value.startsWith('http') || value.includes('www.');
-      
-      const config: any = {};
-      if (useSearch) {
-         config.tools = [{ googleSearch: {} }];
-      }
-
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config
-      });
-      
-      return response.text || "Unknown Product";
-    }
-
+  // Use gemini-2.5-flash for analysis
+  const model = 'gemini-2.5-flash';
+  let prompt = "";
+  
+  // Ensure we have a valid mimeType if empty
+  const safeMimeType = mimeType || 'image/jpeg';
+  
+  if (mode === 'upload') {
+    prompt = `Analyze this image for a dropshipping product listing. 
+    Identify exactly what the product is, its likely category, key features, materials, and human usage. 
+    Be specific. Return a detailed paragraph description suitable for generating marketing assets.`;
+    
+    // Direct API call without try-catch wrapper to let app handle specific errors
     const response = await ai.models.generateContent({
       model,
-      contents,
+      contents: {
+        parts: [
+          { inlineData: { mimeType: safeMimeType, data: cleanBase64(value) } },
+          { text: prompt }
+        ]
+      }
     });
 
     return response.text || "Unknown Product";
 
-  } catch (error) {
-    console.error("Analysis Error:", error);
-    throw new Error("Failed to analyze product.");
+  } else {
+    prompt = `Analyze this product input: "${value}". 
+    If it is a URL, infer the product details from the string.
+    Identify exactly what the product is, its likely category, key features, and human usage.
+    Return a detailed paragraph description suitable for generating marketing assets.`;
+    
+    // Use Search tool if it looks like a URL or complex query to get better context
+    const useSearch = value.startsWith('http') || value.includes('www.');
+    
+    const config: any = {};
+    if (useSearch) {
+       config.tools = [{ googleSearch: {} }];
+    }
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config
+    });
+    
+    return response.text || "Unknown Product";
   }
 };
 
@@ -79,6 +80,7 @@ export const generateProductImages = async (
 ): Promise<GeneratedImage[]> => {
   // Downgrade to gemini-2.5-flash-image to avoid 403 Permission Denied on Pro models
   const imageModel = 'gemini-2.5-flash-image';
+  const safeMimeType = mimeType || 'image/jpeg';
 
   const prompts = [
     {
@@ -127,7 +129,7 @@ export const generateProductImages = async (
       if (inputImage) {
         parts.push({
           inlineData: {
-            mimeType: mimeType,
+            mimeType: safeMimeType,
             data: cleanBase64(inputImage)
           }
         });
@@ -146,8 +148,7 @@ export const generateProductImages = async (
         contents: { parts },
         config: {
             imageConfig: {
-                aspectRatio: "1:1",
-                // Removed imageSize as it is not supported by gemini-2.5-flash-image
+                aspectRatio: "1:1"
             }
         }
       });
